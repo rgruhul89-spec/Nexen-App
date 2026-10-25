@@ -14,10 +14,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Unpack source
+      - name: Find project
         run: |
-          unzip -q nexan-src.zip -d project
-          ls project project/app
+          set -e
+          echo "Files in repo root:"; ls -la
+          ZIP="$(find . -maxdepth 1 -type f -iname '*.zip' | head -n 1)"
+          if [ -n "$ZIP" ]; then
+            echo "Using zip: $ZIP"
+            mkdir -p project
+            unzip -q "$ZIP" -d project
+            SETTINGS="$(find project -name settings.gradle | head -n 1)"
+          else
+            echo "No zip found, using files in the repo"
+            SETTINGS="$(find . -name settings.gradle -not -path './project/*' | head -n 1)"
+          fi
+          if [ -z "$SETTINGS" ]; then echo "ERROR: settings.gradle not found. Upload nexan-src.zip to the repo root."; exit 1; fi
+          ROOT="$(dirname "$SETTINGS")"
+          echo "Project root: $ROOT"
+          ls -la "$ROOT" "$ROOT/app"
+          echo "ROOT=$ROOT" >> "$GITHUB_ENV"
 
       - uses: actions/setup-java@v4
         with:
@@ -29,14 +44,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-          build-root-directory: project
 
       - name: Build debug APK
-        working-directory: project
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: |
+          cd "$ROOT"
+          gradle assembleDebug --no-daemon --stacktrace
 
-      - name: Rename APK
-        run: cp project/app/build/outputs/apk/debug/app-debug.apk Nexan.apk
+      - name: Collect APK
+        run: cp "$ROOT/app/build/outputs/apk/debug/app-debug.apk" Nexan.apk
 
       - uses: actions/upload-artifact@v4
         with:
